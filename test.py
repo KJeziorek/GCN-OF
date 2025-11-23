@@ -12,7 +12,6 @@ from model.model import Model
 from model.loss_fn import optical_flow_loss, sample_flow_at_nodes
 from model.metric_fn import AEE, percent_outliers, flow_accuracy
 
-
 # ---------------- CONFIG & DATA -----------------
 cfg_ds = OmegaConf.load("configs/data/mvsec_indoor.yaml")
 print(cfg_ds)
@@ -30,7 +29,7 @@ test_loader  = DataLoader(test_ds, batch_size=4, num_workers=4,
 device = "cuda"
 model = Model().to(device)
 
-optimizer = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-5)
+optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
 
 
 # ==================================================
@@ -97,7 +96,28 @@ for epoch in range(1, EPOCHS + 1):
     aee, acc, outl = evaluate()
 
     print(f"\nEpoch {epoch:02d} | Loss={loss:.4f} | "
-          f"AEE={aee:.4f} | Acc={acc:.4f} | Outliers={outl:.2f}%")
+          f"AEE={aee:.4f} | Acc={acc:.4f} | Outliers={outl:.2f}% | Scale={model.scale}")
+    
+    # batch_sample = next(iter(train_loader))
+
+    # with torch.no_grad():
+    #     pred = model(batch_sample['x'].unsqueeze(1).to(device),
+    #                 batch_sample['pos'].to(device),
+    #                 batch_sample['edge_index'].to(device),
+    #                 batch_sample['batch'].to(device))
+
+    #     gt_nodes = sample_flow_at_nodes(batch_sample['flow'].to(device),
+    #                                     batch_sample['pos'].to(device),
+    #                                     batch_sample['batch'].to(device))
+
+    # # visualize only first graph slice in batch
+    # mask = (batch_sample['batch'] == 0)
+    # visualize_graph_flow(
+    #     batch_sample['pos'][mask],
+    #     batch_sample['edge_index'],    # edges already global
+    #     gt_nodes[mask],
+    #     pred[mask]
+    # )
 
     # checkpoint
     # if aee < best_aee:

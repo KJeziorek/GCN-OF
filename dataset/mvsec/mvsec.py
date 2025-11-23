@@ -195,7 +195,7 @@ class MVSECDataset(Dataset):
         clip_events = events.clone()
         clip_events[:, 2] = (clip_events[:, 2] - t_min) / (self.event_window) * self.norm_t
         clip_events = clip_events.to(torch.int64)
-        features, positions, edges = matrix_neighbour.generate_edges(clip_events, self.radius, 346, 260)
+        features, positions, edges = matrix_neighbour.generate_edges(clip_events, self.radius, 346, 260, False, 5)
         return features, positions, edges
 
 

@@ -11,6 +11,8 @@ class Model(torch.nn.Module):
     def __init__(self, ):
         super().__init__()
 
+        self.scale = nn.Parameter(torch.ones(2), requires_grad=True)
+
         self.conv0 = MyPointNetConv(1+3, 
                                 64, 
                                 bias=False,
@@ -22,7 +24,7 @@ class Model(torch.nn.Module):
         )
 
         self.norms = nn.ModuleList(
-            [BatchNorm1d(64) for _ in range(5)]
+            [nn.LayerNorm(64) for _ in range(5)]
         )
 
         # --- MLP head ---
@@ -49,13 +51,14 @@ class Model(torch.nn.Module):
         embeddings = []
         for i in range(5):
             if i == 0:
-                x = self.conv0(x, pos, edge_index)
+                h = self.conv0(x, pos, edge_index)
             else:
-                x = self.convs[i-1](x, pos, edge_index)
+                h = self.convs[i-1](x, pos, edge_index)
 
-            x = self.norms[i](x)
-            x = F.relu(x, inplace=True)
-            embeddings.append(x)
+            h = self.norms[i](h)
+            # h = F.relu(h, inplace=True)
+            embeddings.append(h)
+            x = h
         z = torch.cat(embeddings, dim=-1)
         flow = self.mlp(z)
-        return flow
+        return flow * self.scale
