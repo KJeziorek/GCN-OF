@@ -1,75 +1,112 @@
+#include <torch/extension.h>
+#include <pybind11/pybind11.h>
 #include <iostream>
 #include <vector>
-#include <cmath>
 #include <tuple>
-#include <omp.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <algorithm>
 
-// Funkcja generująca krawędzie
-std::tuple<std::vector<int>, std::vector<std::tuple<int, int, int>>, std::vector<std::pair<int, int>>>
-generate_edges(const std::vector<std::vector<int>>& events, int radius, int width, int height) {
-    int num_nodes = events.size();
+using namespace torch;
 
-    std::vector<std::pair<int, int>> edges;
-    edges.reserve(num_nodes);
-    std::vector<std::tuple<int, int, int>> positions;
-    positions.reserve(num_nodes);
-    std::vector<int> features;
-    features.reserve(num_nodes);
+// ------------------------------------------------------------
+// Generate graph edges within spatiotemporal radius
+// Input: events [N,4] -> (x,y,t,p)
+// Output:
+//   features  [M]
+//   positions [M,3]
+//   edges     [E,2]
+// ------------------------------------------------------------
+std::tuple<Tensor, Tensor, Tensor>
+generate_edges_torch(const Tensor& events, int radius, int width, int height) {
 
-    std::vector<std::vector<int>> neigh_matrix(width, std::vector<int>(height, -1));
-    std::vector<std::vector<int>> idx_matrix(width, std::vector<int>(height, -1));
-    int idx = 0;
+    TORCH_CHECK(events.dim() == 2 && events.size(1) == 4,
+                "events tensor must be [N,4]");
 
-    int radius_sq = radius * radius;
+    Tensor events_cpu = events.cpu().to(torch::kInt64);
+    auto accessor = events_cpu.accessor<int64_t, 2>();
 
-    for (int i = 0; i < num_nodes; ++i) {
-        int x = events[i][0];
-        int y = events[i][1];
-        int t = events[i][2];
-        int p = events[i][3];
+    const int64_t num_events = events_cpu.size(0);
+    const int64_t radius_sq = radius * radius;
 
-        // Sprawdzenie duplikatów
-        if (t == neigh_matrix[x][y]) continue;
+    // Estimated maximum values (will trim later)
+    std::vector<int64_t> vec_features;
+    std::vector<int64_t> vec_positions;
+    std::vector<int64_t> vec_edges;
 
-        // Dodanie pętli własnej
-        edges.emplace_back(idx, idx);
-        features.push_back(p);
-        positions.emplace_back(x, y, t);
+    vec_features.reserve(num_events);
+    vec_positions.reserve(num_events * 3);
+    vec_edges.reserve(num_events * 4);
 
-        int x_start = std::max(0, x - radius);
-        int x_end = std::min(width - 1, x + radius);
-        int y_start = std::max(0, y - radius);
-        int y_end = std::min(height - 1, y + radius);
+    std::vector<std::vector<int64_t>> last_time(width,  std::vector<int64_t>(height, -1));
+    std::vector<std::vector<int64_t>> last_idx(width,   std::vector<int64_t>(height, -1));
 
-        // Sprawdzenie sąsiadów w promieniu
-        for (int j = x_start; j <= x_end; ++j) {
-            for (int k = y_start; k <= y_end; ++k) {
-                if (neigh_matrix[j][k] == -1) continue;
+    int64_t node_idx = 0;
 
-                int dx = x - j;
-                int dy = y - k;
-                int dt = t - neigh_matrix[j][k];
-                int dist_sq = dx*dx + dy*dy + dt*dt;
+    for (int64_t i = 0; i < num_events; i++) {
+        int64_t x = accessor[i][0];
+        int64_t y = accessor[i][1];
+        int64_t t = accessor[i][2];
+        int64_t p = accessor[i][3];
+
+        if (last_time[x][y] == t) continue; // skip duplicates
+
+        // add self edge
+        vec_edges.push_back(node_idx);
+        vec_edges.push_back(node_idx);
+
+        vec_features.push_back(p);
+        vec_positions.push_back(x);
+        vec_positions.push_back(y);
+        vec_positions.push_back(t);
+
+        int x_start = std::max<int>(0, x - radius);
+        int x_end   = std::min<int>(width - 1, x + radius);
+        int y_start = std::max<int>(0, y - radius);
+        int y_end   = std::min<int>(height - 1, y + radius);
+
+        for (int nx = x_start; nx <= x_end; nx++) {
+            for (int ny = y_start; ny <= y_end; ny++) {
+                if (last_time[nx][ny] == -1) continue;
+
+                int64_t dx = x - nx;
+                int64_t dy = y - ny;
+                int64_t dt = t - last_time[nx][ny];
+                int64_t dist_sq = dx*dx + dy*dy + dt*dt;
+
                 if (dist_sq <= radius_sq) {
-                    edges.emplace_back(idx, idx_matrix[j][k]);
+                    vec_edges.push_back(node_idx);
+                    vec_edges.push_back(last_idx[nx][ny]);
                 }
             }
         }
 
-        neigh_matrix[x][y] = t;
-        idx_matrix[x][y] = idx;
-        idx++;
+        last_time[x][y] = t;
+        last_idx[x][y] = node_idx;
+        node_idx++;
     }
 
-    return std::make_tuple(features, positions, edges);
+    // Convert vectors to torch tensors
+    Tensor features = torch::from_blob(vec_features.data(),
+                                       { (int64_t)vec_features.size() },
+                                       torch::kInt64).clone();
+
+    Tensor positions = torch::from_blob(vec_positions.data(),
+                                        { (int64_t)vec_positions.size() / 3, 3 },
+                                        torch::kInt64).clone();
+
+    Tensor edges = torch::from_blob(vec_edges.data(),
+                                    { (int64_t)vec_edges.size() / 2, 2 },
+                                    torch::kInt64).clone();
+
+    return {features, positions, edges};
 }
 
-// Kod wiążący
 namespace py = pybind11;
 
 PYBIND11_MODULE(matrix_neighbour, m) {
-    m.def("generate_edges", &generate_edges, "Generowanie krawędzi",
-          py::arg("events"), py::arg("radius"), py::arg("width"), py::arg("height"));
+    m.doc() = "Event graph edge generator using torch tensors";
+
+    m.def("generate_edges",
+          &generate_edges_torch,
+          py::arg("events"), py::arg("radius"), py::arg("width"), py::arg("height"),
+          "Generate graph edges from event data");
 }

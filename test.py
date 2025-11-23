@@ -1,71 +1,64 @@
-import h5py
-import numpy as np
+from dataset.mvsec.mvsec import MVSECDataset
+from omegaconf import omegaconf
+from tqdm import tqdm
+import matrix_neighbour
+import torch
+
+
 import matplotlib.pyplot as plt
-import bisect
 
-# Load data
-data = h5py.File('data/mvsec/indoor_flying/indoor_flying1_data.hdf5', 'r')
-events = data['davis']['left']['events'][:]  # (N, 4) [x, y, t, p]
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
-image_inds = data['davis']['left']['image_raw_event_inds'][:]  # event index per image
-image_frames = data['davis']['left']['image_raw'][:]           # grayscale frames (uint8)
+def visualize_events_edges_3d(positions, features, edges):
+    """
+    positions: (N,3) tensor of (x,y,t)
+    features: (N,) polarity {-1,1} or {0,1}
+    edges:    (E,2)
+    """
 
-of = np.load('data/mvsec/indoor_flying/indoor_flying1_gt_flow_dist.npz')
-xflow = of['x_flow_dist']
-yflow = of['y_flow_dist']
-flow_ts = of['timestamps']
+    pos = positions.cpu().numpy()
+    xs = pos[:, 0]
+    ys = pos[:, 1]
+    ts = pos[:, 2]
 
-H, W = xflow.shape[1], xflow.shape[2]
+    ps = features.cpu().numpy()
 
-for idx in range(333, 444):
-    t_flow = flow_ts[idx]
-    t_start = t_flow - 0.4
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection="3d")
 
-    # nearest grayscale frame to optical flow timestamp
-    # find the event index closest to t_flow
-    event_times = events[:, 2]
-    frame_event_idx = np.searchsorted(event_times, t_flow)
-    # find the closest image frame index from event index lists
-    img_idx = np.searchsorted(image_inds, frame_event_idx) - 1
-    img_idx = np.clip(img_idx, 0, len(image_frames) - 1)
-    frame = image_frames[img_idx]
+    # scatter events
+    scatter = ax.scatter(xs, ys, ts, c=ps, cmap='bwr', s=5, alpha=0.8)
 
-    # select events near timestamp window
-    ev_mask = (event_times >= t_start) & (event_times <= t_flow)
-    sel = events[ev_mask]
+    # connect edges
+    edges_np = edges.cpu().numpy()
+    for src, dst in edges_np:  # subsample for performance (remove [::10] for full detail)
+        ax.plot(
+            [xs[src], xs[dst]],
+            [ys[src], ys[dst]],
+            [ts[src], ts[dst]],
+            color="green",
+            alpha=0.3,
+            linewidth=0.5
+        )
 
-    # build polarity visualization
-    ev_rgb = np.zeros((H, W, 3), dtype=np.float32)
-    for x, y, t, p in sel:
-        xi, yi = int(x), int(y)
-        if 0 <= yi < H and 0 <= xi < W:
-            if p > 0:
-                ev_rgb[yi, xi, 0] += 1.0  # red
-            else:
-                ev_rgb[yi, xi, 2] += 1.0  # blue
-    
-    ev_rgb[ev_rgb > 5] = 5
-    ev_rgb = np.clip(ev_rgb / (np.max(ev_rgb) if np.max(ev_rgb) > 0 else 1), 0, 1)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("T")
 
-    # compute flow magnitude
-    flow_mag = np.sqrt(xflow[idx]**2 + yflow[idx]**2)
-
-    # === Plot ===
-    plt.figure(figsize=(15, 5))
-
-    plt.subplot(1, 3, 1)
-    plt.title(f"Grayscale Frame idx={img_idx}")
-    plt.imshow(frame, cmap='gray')
-    plt.axis("off")
-
-    plt.subplot(1, 3, 2)
-    plt.title("Events (red=ON, blue=OFF)")
-    plt.imshow(ev_rgb)
-    plt.axis("off")
-
-    plt.subplot(1, 3, 3)
-    plt.title("Optical Flow Magnitude")
-    plt.imshow(flow_mag, cmap='inferno')
-    plt.axis("off")
+    ax.set_title("3D Event Graph (x,y,t)")
+    ax.view_init(elev=25, azim=135)  # rotate view
 
     plt.show()
+
+
+cfg_ds = omegaconf.OmegaConf.load('configs/data/mvsec_indoor.yaml')
+
+print(cfg_ds)
+
+ds = MVSECDataset(cfg=cfg_ds, split='train')
+
+for data in tqdm(ds):
+    print(data)
