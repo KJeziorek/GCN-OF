@@ -13,7 +13,7 @@ from model.loss_fn import optical_flow_loss, sample_flow_at_nodes
 from model.metric_fn import AEE, percent_outliers, flow_accuracy
 
 # ---------------- CONFIG & DATA -----------------
-cfg_ds = OmegaConf.load("configs/data/mvsec_indoor.yaml")
+cfg_ds = OmegaConf.load("configs/dataset/mvsec_indoor.yaml")
 print(cfg_ds)
 
 train_ds = MVSECDataset(cfg=cfg_ds, split="train")

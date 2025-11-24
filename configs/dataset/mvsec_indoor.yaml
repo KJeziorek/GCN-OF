@@ -1,0 +1,25 @@
+mvsec_root: "data/mvsec/indoor_flying"
+
+splits:
+  train:
+    - "indoor_flying1"
+    - "indoor_flying3"
+    - "indoor_flying4"
+  test:
+    - "indoor_flying2"
+
+camera:
+  mode: "random"    # 'left', 'right', or 'random'
+
+event_window: 0.4   # seconds of events before flow timestamp
+event_count: 50000
+
+graph:
+  radius: 3
+  norm_t: 128
+
+dataloader:
+  batch_size: 4
+  num_workers: 4
+  shuffle: true
+  pin_memory: true
