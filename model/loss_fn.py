@@ -28,13 +28,16 @@ def graph_charbonnier_loss(pred, edge_index, alpha=0.5, eps=1e-3):
     # pred: [N,2]
     # edge_index: [E,2]
 
-    src = edge_index[:,0]   # i
-    dst = edge_index[:,1]   # j
+    src = edge_index[:,0]
+    dst = edge_index[:,1]
 
-    diff = pred[src] - pred[dst]  # [E,2]
-    diff_norm_sq = (diff * diff).sum(dim=1)  # [E]
+    diff = pred[src] - pred[dst]
+    diff_norm_sq = (diff * diff).sum(dim=1)
 
-    return torch.mean((diff_norm_sq + eps**2)**alpha)
+    deg = torch.bincount(src, minlength=pred.size(0)).float()
+    weight = 1.0 / (deg[src] + 1e-6)
+
+    return torch.mean(weight * (diff_norm_sq + eps**2)**alpha)
 
 def optical_flow_loss(pred, gt, edge_index):
     l_sl1 = smooth_l1_loss(pred, gt)

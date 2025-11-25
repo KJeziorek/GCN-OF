@@ -14,6 +14,7 @@ except ImportError:
 
 import matrix_neighbour
 
+
 class MVSECDataset(Dataset):
     """
     Optimized MVSEC Dataset
@@ -29,6 +30,8 @@ class MVSECDataset(Dataset):
 
         self.radius: int = cfg.graph.radius
         self.norm_t: int = cfg.graph.norm_t
+        self.filtering: bool = cfg.graph.filtering
+        self.delta_t: int = cfg.graph.delta_t
 
         self.sequence_names: List[str] = list(getattr(cfg.splits, split))
 
@@ -142,21 +145,22 @@ class MVSECDataset(Dataset):
 
         # fast events selection
         start_idx, end_idx = self._event_index[cam][seq_idx][frame_idx]
-        events = self._events[cam][seq_idx][start_idx:end_idx]
+        events = self._events[cam][seq_idx][start_idx:end_idx].copy()
 
-        # ------------------- AUGMENTATIONS ----------------------
+        # AUGMENTATIONS
         if self.split == "train":
-
-            # Temporal warping  (Uniform 0.5–1.5)
             warp = np.random.uniform(0.5, 1.5)
             events[:, 2] *= warp
             x_flow *= warp
             y_flow *= warp
 
-            # XY flip with flow direction update
             if random.random() < 0.5:
-                events[:, 0] = self.width - 1 - events[:, 0]   # flip x coord
-                x_flow *= -1                                   # reverse horizontal flow
+                events[:, 0] = self.width - 1 - events[:, 0]
+                x_flow = np.flip(x_flow, axis=1).copy()
+                y_flow = np.flip(y_flow, axis=1).copy()
+                x_flow *= -1
+
+        flow = np.stack([x_flow, y_flow], axis=0)  # stack here AFTER augmentation
         # --------------------------------------------------------
 
         # cut events
@@ -195,7 +199,20 @@ class MVSECDataset(Dataset):
         clip_events = events.clone()
         clip_events[:, 2] = (clip_events[:, 2] - t_min) / (self.event_window) * self.norm_t
         clip_events = clip_events.to(torch.int64)
-        features, positions, edges = matrix_neighbour.generate_edges(clip_events, self.radius, 346, 260, False, 5)
+        features, positions, edges = matrix_neighbour.generate_edges(clip_events, self.radius, 346, 260, self.filtering, self.delta_t)
         return features, positions, edges
 
 
+if __name__ == '__main__':
+    import numpy as np
+    import torch
+    from omegaconf import OmegaConf
+
+    # ---------------- CONFIG & DATA -----------------
+    cfg_ds = OmegaConf.load("configs/data/mvsec_indoor.yaml")
+    print(cfg_ds)
+
+    train_ds = MVSECDataset(cfg=cfg_ds, split="train")
+
+    for data in train_ds:
+        print(data)

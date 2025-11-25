@@ -9,6 +9,10 @@ from model.layers.quantisation.observer import Observer, FakeQuantize, quantize_
 
 import numpy as np
 
+import torch
+import torch.nn.functional as F
+
+
 class MyPointNetConv(nn.Module):
     def __init__(
         self,
@@ -80,13 +84,13 @@ class MyPointNetConv(nn.Module):
 
         out = self.message(x, pos, edge_index)
         
-        # Apply activation function
-        if self.use_relu:
-            if not self.quantize_mode:
-                out = F.relu(out)
-            else:
-                # In quantize mode, simulate quantized ReLU
-                out[out < self.observer_output.zero_point] = self.observer_output.zero_point
+        # # Apply activation function
+        # if self.use_relu:
+        #     if not self.quantize_mode:
+        #         out = F.relu(out)
+        #     else:
+        #         # In quantize mode, simulate quantized ReLU
+        #         out[out < self.observer_output.zero_point] = self.observer_output.zero_point
 
         return out
 
@@ -117,7 +121,7 @@ class MyPointNetConv(nn.Module):
 
         '''Propagate message through linear layer.'''
         msg = self.linear(msg)
-        msg = self.norm(msg)
+        # msg = self.norm(msg)
 
         '''Update graph features.'''
         unique_positions, indices = torch.unique(edge_index[:,0], dim=0, return_inverse=True)
