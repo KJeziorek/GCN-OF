@@ -5,17 +5,18 @@ from torch.nn import BatchNorm1d, InstanceNorm1d
 import torch.nn as nn
 
 from model.layers.my_pointnet import MyPointNetConv
+from model.layers.my_pointtransformer import MyPointTransformerConv
 from model.layers.my_linear import MyLinear
 
 class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.scale = nn.Parameter(torch.ones(2), requires_grad=True)
+        self.scale = nn.Parameter(torch.ones(2), requires_grad=False)
 
-        self.conv0 = MyPointNetConv(1+3, 64, bias=False, num_bits=8, first_layer=True)
+        self.conv0 = MyPointTransformerConv(4, 64)
         self.convs = nn.ModuleList(
-            [MyPointNetConv(64+3, 64, bias=False, num_bits=8, first_layer=False) for _ in range(4)]
+            [MyPointTransformerConv(64, 64) for _ in range(4)]
         )
 
         self.norms = nn.ModuleList([nn.LayerNorm(64) for _ in range(5)])
@@ -33,10 +34,10 @@ class Model(torch.nn.Module):
     def forward(self, x, pos, edge_index, batch=None):
         embeddings = []
         for i in range(5):
-            h = self.conv0(x, pos, edge_index) if i == 0 else self.convs[i-1](x, pos, edge_index)
-            h = self.norms[i](h)
-            h = F.relu(h, inplace=True)
+            h = self.conv0(torch.cat([x,pos/345.], dim=1), pos, edge_index) if i == 0 else self.convs[i-1](x, pos, edge_index)
+            # h = self.norms[i](h)
             embeddings.append(h)
+            # h = F.relu(h, inplace=True)
             x = h
 
         z = torch.cat(embeddings, dim=-1)

@@ -117,7 +117,7 @@ class MyPointNetConv(nn.Module):
         pos_i = pos[edge_index[:, 0]]
         pos_j = pos[edge_index[:, 1]]
         x_j = x[edge_index[:, 1]]
-        msg = torch.cat((x_j, pos_j - pos_i), dim=1)
+        msg = torch.cat((x_j, pos_j/345., pos_j - pos_i), dim=1)
 
         '''Propagate message through linear layer.'''
         msg = self.linear(msg)

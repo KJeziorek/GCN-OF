@@ -15,14 +15,26 @@ def sample_flow_at_nodes(flow, pos, batch_idx):
     return flow[batch_idx, :, y, x].permute(0,1)   # [N,2]
 
 def smooth_l1_loss(pred, gt, beta=0.025):
+    # mask out zero-flow GT nodes
+    mag = torch.linalg.norm(gt, dim=1)
+    valid_mask = mag > 1e-6
+
+    # if no valid nodes, loss=0
+    if valid_mask.sum() == 0:
+        return torch.tensor(0.0, device=pred.device)
+
+    pred = pred[valid_mask]
+    gt   = gt[valid_mask]
+
     diff = pred - gt
-    abs_diff = diff.abs()
-    loss = torch.where(
-        abs_diff < beta,
-        0.5 * (diff * diff) / beta,
-        abs_diff - 0.5 * beta
-    )
-    return loss.mean()
+    norm = torch.linalg.norm(diff, dim=1)
+
+    return torch.mean(torch.where(
+        norm < beta,
+        0.5 * (norm * norm) / beta,
+        norm - 0.5 * beta
+    ))
+
 
 def graph_charbonnier_loss(pred, edge_index, alpha=0.5, eps=1e-3):
     # pred: [N,2]
@@ -43,4 +55,4 @@ def optical_flow_loss(pred, gt, edge_index):
     l_sl1 = smooth_l1_loss(pred, gt)
     l_smooth = graph_charbonnier_loss(pred, edge_index)
 
-    return l_sl1 + 0.1 * l_smooth, l_sl1, l_smooth
+    return l_sl1 + 0.0 * l_smooth, l_sl1, l_smooth

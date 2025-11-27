@@ -29,7 +29,7 @@ test_loader  = DataLoader(test_ds, batch_size=1, num_workers=1,
 device = "cuda"
 model = Model().to(device)
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3)
 
 
 # ==================================================
@@ -49,7 +49,9 @@ def train_one_epoch():
 
         gt_nodes = batch["flow"].to(device) 
 
-        loss, l1, smooth = optical_flow_loss(pred, gt_nodes, batch['edge_index'].to(device))
+        loss, l1, smooth = optical_flow_loss(pred, 
+                                             gt_nodes / 10., 
+                                             batch['edge_index'].to(device))
         loss.backward()
         optimizer.step()
 
@@ -61,37 +63,85 @@ def train_one_epoch():
 # ==================================================
 # ----------------  EVALUATION LOOP ----------------
 # ==================================================
+
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from matplotlib.colors import Normalize
+
+def visualize_and_save(pos, pred, gt, frame_id, save_dir="output_flow_vis", max_points=10000):
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Convert to numpy
+    pos = pos.cpu().numpy()
+    pred = pred.cpu().numpy()
+    gt = gt.cpu().numpy()
+
+    N = pos.shape[0]
+    if N > max_points:
+        # randomly select subset for visual clarity
+        idx = np.random.choice(N, max_points, replace=False)
+        pos  = pos[idx]
+        pred = pred[idx]
+        gt   = gt[idx]
+
+    # Compute angles
+    pred_ang = np.arctan2(pred[:,1], pred[:,0])
+    gt_ang   = np.arctan2(gt[:,1], gt[:,0])
+
+    # Normalize angles to [0,1] for colormap
+    norm = Normalize(vmin=-np.pi, vmax=np.pi)
+    pred_colors = cm.hsv(norm(pred_ang))
+    gt_colors   = cm.hsv(norm(gt_ang))
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+    # GT quiver
+    axs[0].quiver(pos[:,0], pos[:,1],
+                  gt[:,0], gt[:,1],
+                  color=gt_colors, angles='xy', scale_units='xy', scale=1)
+    axs[0].set_title(f"GT Flow | Frame {frame_id}")
+    axs[0].invert_yaxis()
+
+    # Pred quiver
+    axs[1].quiver(pos[:,0], pos[:,1],
+                  pred[:,0], pred[:,1],
+                  color=pred_colors, angles='xy', scale_units='xy', scale=1)
+    axs[1].set_title(f"Predicted Flow | Frame {frame_id}")
+    axs[1].invert_yaxis()
+
+    filename = os.path.join(save_dir, f"flow_frame_{frame_id:04d}.png")
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
 def evaluate():
     model.eval()
     total_aee, total_acc, total_out = [], [], []
 
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Testing"):
+        for frame_id, batch in enumerate(tqdm(test_loader, desc="Testing")):
             pred = model(batch['x'].unsqueeze(1).to(device),
                          batch['pos'].to(device),
                          batch['edge_index'].to(device),
                          batch['batch'].to(device))
 
-            gt_nodes = batch["flow"].to(device)
-            pos = batch["pos"].to(device)
+            gt = batch["flow"].to(device)
 
-            # ---- HUGNet-style: evaluate only on last half of slice ----
-            half = cfg_ds.graph.norm_t * 0.5               # normalized time midpoint
-            mask = pos[:, 2] >= half                       # boolean mask
+            pred = pred * 10
 
-            pred_valid = pred[mask]
-            gt_valid   = gt_nodes[mask]
+            total_aee.append(AEE(pred, gt).item())
+            total_acc.append(flow_accuracy(pred, gt).item())
+            total_out.append(percent_outliers(pred, gt).item())
 
-            # skip if slice has no valid nodes
-            if pred_valid.numel() == 0:
-                continue
-
-            total_aee.append(AEE(pred_valid, gt_valid).item())
-            total_acc.append(flow_accuracy(pred_valid, gt_valid).item())
-            total_out.append(percent_outliers(pred_valid, gt_valid).item())
+            if epoch > 5:
+                mask = (batch['batch'] == 0)
+                visualize_and_save(batch['pos'][mask],
+                                pred[mask].cpu(),
+                                gt[mask].cpu(),
+                                frame_id)
 
     return np.mean(total_aee), np.mean(total_acc), np.mean(total_out)
-
 
 # ==================================================
 # ---------------- MAIN TRAINING -------------------

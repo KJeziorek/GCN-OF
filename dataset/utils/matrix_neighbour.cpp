@@ -7,18 +7,13 @@
 
 using namespace torch;
 
-// ----------------------------------------------------------------------
-// Generate graph edges with optional Spatio-Temporal Contrast filtering
-// Input:  events [N,4]  (x,y,t,p)
-// Output: features[N], positions[N,3], edges[E,2]
-// ----------------------------------------------------------------------
 std::tuple<Tensor, Tensor, Tensor>
 generate_edges_torch(const Tensor& events,
                      int radius,
                      int width,
                      int height,
                      bool stc_enable = false,
-                     int64_t dt_confirm = 100)   // e.g. if t normalized 0-128 → 200 acceptable
+                     int64_t dt_confirm = 100)
 {
     TORCH_CHECK(events.dim() == 2 && events.size(1) == 4,
                 "events tensor must be [N,4]");
@@ -36,8 +31,9 @@ generate_edges_torch(const Tensor& events,
     vec_positions.reserve(num_events * 3);
     vec_edges.reserve(num_events * 4);
 
-    std::vector<std::vector<int64_t>> last_time(width,  std::vector<int64_t>(height, -1));
-    std::vector<std::vector<int64_t>> last_idx(width,   std::vector<int64_t>(height, -1));
+    std::vector<std::vector<int64_t>> last_time(width, std::vector<int64_t>(height, -1));
+    std::vector<std::vector<int64_t>> last_idx(width,  std::vector<int64_t>(height, -1));
+    std::vector<std::vector<int64_t>> last_p(width,    std::vector<int64_t>(height,  0));
 
     int64_t node_idx = 0;
 
@@ -47,21 +43,23 @@ generate_edges_torch(const Tensor& events,
         int64_t t = accessor[i][2];
         int64_t p = accessor[i][3];
 
-        // skip duplicates
+        // Avoid duplicates
         if (last_time[x][y] == t) continue;
 
         // ---------------- STC PREFILTER OPTIONAL --------------------
         if (stc_enable && last_time[x][y] >= 0) {
             int64_t dt = t - last_time[x][y];
-            if (dt > dt_confirm) {
-                // reject this event (not supported by close previous event)
+
+            // reject event if previous did NOT occur recently or same polarity
+            if (dt > dt_confirm || p == last_p[x][y]) {
                 last_time[x][y] = t;
+                last_p[x][y] = p;
                 continue;
             }
         }
         // ------------------------------------------------------------
 
-        // Add node (self-loop edge)
+        // Add node (self-loop)
         vec_edges.push_back(node_idx);
         vec_edges.push_back(node_idx);
 
@@ -92,7 +90,9 @@ generate_edges_torch(const Tensor& events,
         }
 
         last_time[x][y] = t;
-        last_idx[x][y] = node_idx;
+        last_idx[x][y]  = node_idx;
+        last_p[x][y]    = p;
+
         node_idx++;
     }
 
@@ -114,7 +114,7 @@ PYBIND11_MODULE(matrix_neighbour, m) {
           py::arg("radius"),
           py::arg("width"),
           py::arg("height"),
-          py::arg("stc_enable") = false,
-          py::arg("dt_confirm") = 200,
+          py::arg("stc_enable") = true,
+          py::arg("dt_confirm") = 1,
           "Generate graph edges from event data with optional STC prefilter");
 }

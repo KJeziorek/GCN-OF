@@ -145,14 +145,6 @@ class MVSECDataset(Dataset):
         if self.event_count:
             events = events[:self.event_count]
 
-        # ----- augment before graph -----
-        if self.split == "train":
-            # warp = np.random.uniform(0.5, 1.5)
-            # events[:, 2] *= warp  # warp timestamp
-
-            if random.random() < 0.5:
-                events[:, 0] = self.width - 1 - events[:, 0]
-
         # ----- build graph -----
         events_torch = torch.from_numpy(events)
         f, p, e = self.generate_graph(events_torch)  # positions: [N',3]
@@ -192,12 +184,13 @@ class MVSECDataset(Dataset):
         flow[:,0] = (1 - alpha) * x_flow_full[idx, ys, xs] + alpha * x_flow_full[idx+1, ys, xs]
         flow[:,1] = (1 - alpha) * y_flow_full[idx, ys, xs] + alpha * y_flow_full[idx+1, ys, xs]
 
-        # ----- apply augmentation on flow only (after graph) -----
+        # ----- apply augmentation 
         if self.split == "train":
-            # flow *= warp  # match timestamp warp
-
+            # ---- Random horizontal flip ----
             if random.random() < 0.5:
-                flow[:,0] *= -1  # flip vx
+                events[:, 0] = self.width - 1 - events[:, 0]
+                p[:, 0] = self.width - 1 - p[:, 0]
+                flow[:, 0] *= -1
 
         # ----- Convert to torch -----
         events = torch.from_numpy(events)
@@ -208,7 +201,7 @@ class MVSECDataset(Dataset):
             "features": f.to(torch.float32),
             "positions": p.to(torch.float32),
             "edges": e.to(torch.long),
-            "flow": flow.to(torch.float32),  # [N', 2] aligned with graph
+            "flow": flow.to(torch.float32),
             "timestamp": float(self._flow_ts[seq_idx][frame_idx]),
             "sequence": self.sequence_names[seq_idx],
             "camera": cam,
