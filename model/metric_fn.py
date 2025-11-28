@@ -1,25 +1,31 @@
 import torch
 
 def AEE(pred, gt):
+    diff = torch.linalg.norm(pred - gt, dim=1)
+    return diff.mean()
+
+    # here we remove the near zero GT values
     mag = torch.linalg.norm(gt, dim=1)
     valid_mask = mag > 1e-6
 
     if valid_mask.sum() == 0:
         return torch.tensor(0.0, device=pred.device)
-
     diff = torch.linalg.norm(pred[valid_mask] - gt[valid_mask], dim=1)
+
+    diff = torch.linalg.norm(pred - gt, dim=1)
     return diff.mean()
 
 
 def percent_outliers(pred, gt):
-    mag = torch.linalg.norm(gt, dim=1)
-    valid_mask = mag > 1e-6
+    # Remove near 0 GT values 
 
-    if valid_mask.sum() == 0:
-        return torch.tensor(0.0, device=pred.device)
+    # mag = torch.linalg.norm(gt, dim=1)
+    # valid_mask = mag > 1e-6
+    # if valid_mask.sum() == 0:
+    #     return torch.tensor(0.0, device=pred.device)
 
-    pred = pred[valid_mask]
-    gt   = gt[valid_mask]
+    # pred = pred[valid_mask]
+    # gt   = gt[valid_mask]
 
     epe = torch.linalg.norm(pred - gt, dim=1)
     gt_mag = torch.linalg.norm(gt, dim=1)
@@ -29,14 +35,16 @@ def percent_outliers(pred, gt):
 
 
 def flow_accuracy(pred, gt, zeta=0.25):
-    mag = torch.linalg.norm(gt, dim=1)
-    valid_mask = mag > 1e-6
+    # Remove near 0 GT values 
 
-    if valid_mask.sum() == 0:
-        return torch.tensor(0.0, device=pred.device)
+    # mag = torch.linalg.norm(gt, dim=1)
+    # valid_mask = mag > 1e-6
 
-    pred = pred[valid_mask]
-    gt   = gt[valid_mask]
+    # if valid_mask.sum() == 0:
+    #     return torch.tensor(0.0, device=pred.device)
+
+    # pred = pred[valid_mask]
+    # gt   = gt[valid_mask]
 
     rel = torch.linalg.norm(pred - gt, dim=1) / (torch.linalg.norm(pred, dim=1) + 1e-12)
     return (rel < zeta).float().mean()

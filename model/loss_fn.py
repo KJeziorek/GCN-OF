@@ -8,6 +8,8 @@ def sample_flow_at_nodes(flow, pos, batch_idx):
     batch_idx: [N]
     returns [N,2]
     """
+
+    # Used only if we have as GT dense optical flow - for now we do not use it
     B, C, H, W = flow.shape
     x = pos[:,0].long().clamp(0, W-1)
     y = pos[:,1].long().clamp(0, H-1)
@@ -16,20 +18,21 @@ def sample_flow_at_nodes(flow, pos, batch_idx):
 
 def smooth_l1_loss(pred, gt, beta=0.025):
     # mask out zero-flow GT nodes
-    mag = torch.linalg.norm(gt, dim=1)
-    valid_mask = mag > 1e-6
+    # mag = torch.linalg.norm(gt, dim=1)
+    # valid_mask = mag > 1e-6
 
-    # if no valid nodes, loss=0
-    if valid_mask.sum() == 0:
-        return torch.tensor(0.0, device=pred.device)
+    # # if no valid nodes, loss=0
+    # if valid_mask.sum() == 0:
+    #     return torch.tensor(0.0, device=pred.device)
 
-    pred = pred[valid_mask]
-    gt   = gt[valid_mask]
+    # pred = pred[valid_mask]
+    # gt   = gt[valid_mask]
 
-    # diff = pred - gt
-    # norm = torch.linalg.norm(diff, dim=1)
-
+    # Use build in smoothL1Loss or from paper - in paper used on norm values - IDK which one is better...
     return torch.nn.functional.smooth_l1_loss(pred, gt, reduction='mean', beta=beta)
+
+    diff = pred - gt
+    norm = torch.linalg.norm(diff, dim=1)
 
     return torch.mean(torch.where(
         norm < beta,

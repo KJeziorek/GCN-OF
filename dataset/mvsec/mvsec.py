@@ -151,9 +151,10 @@ class MVSECDataset(Dataset):
         f, p, e, normals, flows = self.generate_graph(events_torch)  # positions: [N',3]
         f = f.unsqueeze(1)
 
+        # Potentialy merge normals/flows features to tensor - for now best is without...
         # f = torch.cat([f, flows/20.], dim=1)
 
-        # Apply edge dropout
+        # Apply edge dropout augmentation
         if self.split == "train":
             mask = torch.rand(e.size(0)) > 0.25
             keep = mask | (e[:, 0] == e[:, 1])
@@ -224,21 +225,6 @@ class MVSECDataset(Dataset):
         clip_events = clip_events.to(torch.int64)
         features, positions, edges, normals, flows = matrix_neighbour.generate_edges(clip_events, self.radius_xy, self.radius_t, 346, 260, self.filtering, self.delta_t)
         return features, positions, edges, normals, flows
-    
-    def _interp_event_flow_pixel(self, seq_idx, t_event, x, y):
-        x_flow_full, y_flow_full = self._flow[seq_idx]
-        ts = self._flow_ts[seq_idx]
-
-        i = np.searchsorted(ts, t_event, side="right") - 1
-        i = np.clip(i, 0, len(ts) - 2)
-
-        t0, t1 = ts[i], ts[i+1]
-        alpha = (t_event - t0) / (t1 - t0 + 1e-9)
-
-        vx = (1 - alpha) * x_flow_full[i, y, x] + alpha * x_flow_full[i+1, y, x]
-        vy = (1 - alpha) * y_flow_full[i, y, x] + alpha * y_flow_full[i+1, y, x]
-
-        return vx, vy
 
 
 if __name__ == '__main__':

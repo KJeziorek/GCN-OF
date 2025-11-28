@@ -26,6 +26,10 @@ pip install \
 # Install HDF5 related libs
 conda install h5py
 conda install -c conda-forge blosc-hdf5-plugin
+
+# Inside main folder
+cd GCN-OF
+python setup.py build_ext --inplace
 ```
 
 ---
