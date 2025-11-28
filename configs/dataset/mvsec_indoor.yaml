@@ -15,10 +15,11 @@ event_window: 0.4   # seconds of events before flow timestamp
 event_count: 99999999   # num of events per graph
 
 graph:
-  radius: 5
-  norm_t: 260
+  radius_xy: 8
+  radius_t: 16
+  norm_t: 200
   filtering: true
-  delta_t: 1
+  delta_t: 15
 
 dataloader:
   batch_size: 1

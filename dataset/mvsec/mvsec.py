@@ -28,7 +28,8 @@ class MVSECDataset(Dataset):
         self.event_window: float = float(cfg.event_window)
         self.event_count: int = cfg.event_count
 
-        self.radius: int = cfg.graph.radius
+        self.radius_xy: int = cfg.graph.radius_xy
+        self.radius_t: int = cfg.graph.radius_t
         self.norm_t: int = cfg.graph.norm_t
         self.filtering: bool = cfg.graph.filtering
         self.delta_t: int = cfg.graph.delta_t
@@ -147,7 +148,10 @@ class MVSECDataset(Dataset):
 
         # ----- build graph -----
         events_torch = torch.from_numpy(events)
-        f, p, e = self.generate_graph(events_torch)  # positions: [N',3]
+        f, p, e, normals, flows = self.generate_graph(events_torch)  # positions: [N',3]
+        f = f.unsqueeze(1)
+
+        f = torch.cat([f, flows/20.], dim=1)
 
         # Apply edge dropout
         if self.split == "train":
@@ -218,8 +222,8 @@ class MVSECDataset(Dataset):
         clip_events = events.clone()
         clip_events[:, 2] = (clip_events[:, 2] - t_min) / (self.event_window) * self.norm_t
         clip_events = clip_events.to(torch.int64)
-        features, positions, edges = matrix_neighbour.generate_edges(clip_events, self.radius, 346, 260, self.filtering, self.delta_t)
-        return features, positions, edges
+        features, positions, edges, normals, flows = matrix_neighbour.generate_edges(clip_events, self.radius_xy, self.radius_t, 346, 260, self.filtering, self.delta_t)
+        return features, positions, edges, normals, flows
     
     def _interp_event_flow_pixel(self, seq_idx, t_event, x, y):
         x_flow_full, y_flow_full = self._flow[seq_idx]

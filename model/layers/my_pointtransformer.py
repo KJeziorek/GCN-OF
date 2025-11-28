@@ -82,7 +82,7 @@ class MyPointTransformerConv(nn.Module):
         pos: torch.Tensor,        # [N, 3]
         edge_index: torch.Tensor  # [E, 2] (i <- j)
     ) -> torch.Tensor:
-
+        
         row = edge_index[:, 0]  # target nodes (i)
         col = edge_index[:, 1]  # source nodes (j)
 

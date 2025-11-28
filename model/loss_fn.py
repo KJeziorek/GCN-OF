@@ -26,8 +26,10 @@ def smooth_l1_loss(pred, gt, beta=0.025):
     pred = pred[valid_mask]
     gt   = gt[valid_mask]
 
-    diff = pred - gt
-    norm = torch.linalg.norm(diff, dim=1)
+    # diff = pred - gt
+    # norm = torch.linalg.norm(diff, dim=1)
+
+    return torch.nn.functional.smooth_l1_loss(pred, gt, reduction='mean', beta=beta)
 
     return torch.mean(torch.where(
         norm < beta,

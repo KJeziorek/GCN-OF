@@ -14,10 +14,14 @@ class Model(torch.nn.Module):
 
         self.scale = nn.Parameter(torch.ones(2), requires_grad=False)
 
-        self.conv0 = MyPointTransformerConv(4, 64)
+        self.conv0 = MyPointTransformerConv(6, 64)
+        # self.conv0 = MyPointNetConv(6+3, 64)
         self.convs = nn.ModuleList(
             [MyPointTransformerConv(64, 64) for _ in range(4)]
         )
+        # self.convs = nn.ModuleList(
+        #     [MyPointNetConv(64+3, 64) for _ in range(4)]
+        # )
 
         self.norms = nn.ModuleList([nn.LayerNorm(64) for _ in range(5)])
         
@@ -35,10 +39,9 @@ class Model(torch.nn.Module):
         embeddings = []
         for i in range(5):
             h = self.conv0(torch.cat([x,pos/345.], dim=1), pos, edge_index) if i == 0 else self.convs[i-1](x, pos, edge_index)
-            # h = self.norms[i](h)
+            h = self.norms[i](h)
             embeddings.append(h)
-            # h = F.relu(h, inplace=True)
-            x = h
+            x = F.relu(h + x) if i > 0 else F.relu(h)
 
         z = torch.cat(embeddings, dim=-1)
         z = F.layer_norm(z, z.shape[-1:])

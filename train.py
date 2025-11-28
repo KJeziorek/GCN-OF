@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 
 from dataset.mvsec.mvsec import MVSECDataset
 from dataset.mvsec.collate_fn import collate_fn
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from model.model import Model
 from model.loss_fn import optical_flow_loss, sample_flow_at_nodes
 from model.metric_fn import AEE, percent_outliers, flow_accuracy
@@ -29,7 +29,8 @@ test_loader  = DataLoader(test_ds, batch_size=1, num_workers=1,
 device = "cuda"
 model = Model().to(device)
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=5e-4)
+scheduler = ReduceLROnPlateau(optimizer, "min", factor=0.5, patience=10, threshold=0.05)
 
 
 # ==================================================
@@ -41,8 +42,8 @@ def train_one_epoch():
 
     for batch in tqdm(train_loader, desc="Training"):
         optimizer.zero_grad()
-
-        pred = model(batch['x'].unsqueeze(1).to(device),
+        
+        pred = model(batch['x'].to(device),
                      batch['pos'].to(device),
                      batch['edge_index'].to(device),
                      batch['batch'].to(device))
@@ -50,7 +51,7 @@ def train_one_epoch():
         gt_nodes = batch["flow"].to(device) 
 
         loss, l1, smooth = optical_flow_loss(pred, 
-                                             gt_nodes / 5., 
+                                             gt_nodes, 
                                              batch['edge_index'].to(device))
         loss.backward()
         optimizer.step()
@@ -121,14 +122,12 @@ def evaluate():
 
     with torch.no_grad():
         for frame_id, batch in enumerate(tqdm(test_loader, desc="Testing")):
-            pred = model(batch['x'].unsqueeze(1).to(device),
+            pred = model(batch['x'].to(device),
                          batch['pos'].to(device),
                          batch['edge_index'].to(device),
                          batch['batch'].to(device))
 
             gt = batch["flow"].to(device)
-
-            pred = pred * 5
 
             total_aee.append(AEE(pred, gt).item())
             total_acc.append(flow_accuracy(pred, gt).item())
@@ -152,6 +151,7 @@ best_aee = 1e9
 for epoch in range(1, EPOCHS + 1):
     loss = train_one_epoch()
     aee, acc, outl = evaluate()
+    scheduler.step(loss)
 
     print(f"\nEpoch {epoch:02d} | Loss={loss:.4f} | "
           f"AEE={aee:.4f} | Acc={acc:.4f} | Outliers={outl:.2f}% | Scale={model.scale}")
